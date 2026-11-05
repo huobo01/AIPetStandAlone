@@ -1,0 +1,440 @@
+================================================================================
+              AIPetStandAlone 版本开发流程设计 (Development Process)
+================================================================================
+版本：v1.0 (单机版)
+日期：2026-10-16
+开发模型：迭代增量模型 (Iterative-Incremental)
+  - 每个迭代交付可运行的增量
+  - 迭代内可微调需求，迭代间可调整优先级
+  - 核心骨架优先，功能按模块逐步叠加
+编码：UTF-8 (无 BOM)
+================================================================================
+
+================================================================================
+目录
+================================================================================
+一、开发模型选择与理由
+  1.1 模型 / 1.2 迭代原则
+二、迭代总览
+三、Iter-0：框架与插件基座
+  3.1 任务清单 / 3.2 交付物 / 3.3 验收标准
+四、Iter-1：极简模式 + AI 对话
+  4.1 任务清单 / 4.2 交付物 / 4.3 验收标准
+五、Iter-2：日常模式 + 宠物系统
+  5.1 任务清单 / 5.2 交付物 / 5.3 验收标准
+六、Iter-3：游戏模式 + 小游戏
+  6.1 任务清单 / 6.2 交付物 / 6.3 验收标准
+七、Iter-4：插件系统 + 管家插件 + 壁纸插件
+  7.1 任务清单 / 7.2 交付物 / 7.3 验收标准
+八、Iter-5：优化与发布
+  8.1 任务清单 / 8.2 验收标准
+九、插件开发详细流程（Iter-4 子流程）
+  步骤1~9：定义契约 / 内置加载 / 资源型加载 / 通信 / 卸载 / UI 注入 /
+           管家插件 / 壁纸插件 / 热更新扩展点
+十、风险与应对
+  10.1 AI 输出不稳定 / 10.2 插件架构复杂 / 10.3 透明窗口兼容 / 10.4 内存超标
+
+================================================================================
+一、开发模型选择与理由
+================================================================================
+
+1.1 模型：迭代增量模型
+    将 v1 拆分为多个迭代，每个迭代产出可运行、可验证的软件增量。
+    适合本项目原因：
+      - 需求明确但实现细节需逐步探索（AI 输出不稳定、插件架构）
+      - 框架先行，业务模块逐步叠加
+      - 三种模式可独立交付与验证
+
+1.2 迭代原则
+    - 每个迭代结束必须有可运行的 Demo
+    - 优先保证核心链路贯通，再完善细节
+    - 技术风险高的任务提前验证（AI 对话、插件加载）
+    - 每个迭代末更新 SRS 与数据设计词典
+
+================================================================================
+二、迭代总览
+================================================================================
+
+    ┌──────────┬────────────────────────┬─────────────────────────────┐
+    │ 迭代     │ 主题                   │ 核心交付物                   │
+    ├──────────┼────────────────────────┼─────────────────────────────┤
+    │ Iter-0   │ 框架与插件基座         │ 可运行的框架+插件骨架        │
+    │ Iter-1   │ 极简模式 + AI 对话     │ 文字对话桌宠                 │
+    │ Iter-2   │ 日常模式 + 宠物系统    │ 完整互动桌宠                 │
+    │ Iter-3   │ 游戏模式 + 小游戏      │ 捉宠游戏+图鉴                │
+    │ Iter-4   │ 插件系统 + 壁纸插件    │ 可加载插件的桌宠             │
+    │ Iter-5   │ 优化与发布             │ 性能达标+可发布包            │
+    └──────────┴────────────────────────┴─────────────────────────────┘
+
+================================================================================
+三、Iter-0：框架与插件基座
+================================================================================
+
+目标：搭建可运行的框架骨架与插件基座，为后续迭代提供基础设施。
+
+3.1 任务清单
+    T0-01  现有框架代码审查与优化（已完成）
+    T0-02  创建 IPlugin 接口与 PluginManifest 数据类（已完成，含 isImportant/category）
+    T0-03  创建 PluginManager（v1 内置插件加载，已完成）
+    T0-04  框架适配：确保 AddrMgr/EventCenter/PoolMgr 支持插件使用（已完成）
+    T0-05  创建 GameManager 主入口（生命周期管理，已完成）
+    T0-06  创建 ModeManager（模式切换骨架，已完成）
+    T0-07  创建 ResourceRegistry 资源注册中心（框架核心服务，已完成）
+    T0-08  创建 IResourceProvider / IAIActivatable / IDataExportable 接口（已完成）
+    T0-09  PluginManager 集成 ResourceRegistry、能力注册、数据导出导入（已完成）
+    T0-10  创建管家插件骨架：StewardCore 内核 + StewardSkin 外核 + 三套内置皮套（已完成）
+    T0-11  E_EventType 事件枚举扩展（资源/插件/对话/宠物/管家事件，已完成）
+    T0-12  验证：启动后能正确初始化所有管理器，无报错
+
+3.2 交付物
+    - Assets/Scripts/Framework/Plugin/IPlugin.cs
+    - Assets/Scripts/Framework/Plugin/IResourceProvider.cs
+    - Assets/Scripts/Framework/Plugin/IAIActivatable.cs
+    - Assets/Scripts/Framework/Plugin/IDataExportable.cs
+    - Assets/Scripts/Framework/Plugin/PluginManager.cs
+    - Assets/Scripts/Framework/Plugin/PluginManifest.cs
+    - Assets/Scripts/Framework/Res/ResourceRegistry.cs
+    - Assets/Scripts/Plugin/Steward/StewardPlugin.cs
+    - Assets/Scripts/Plugin/Steward/StewardCore.cs
+    - Assets/Scripts/Plugin/Steward/StewardSkin.cs
+    - Assets/Scripts/Game/GameManager.cs
+    - Assets/Scripts/Game/Mode/ModeManager.cs
+    - Assets/Scripts/Framework/EventCenter/E_EventType.cs
+
+3.3 验收标准
+    - Unity 启动后所有 BaseManager 单例可正常访问（含 ResourceRegistry）
+    - PluginManager 能加载并初始化内置插件（管家插件）
+    - 管家插件加载后内核启动，默认皮套为机器人
+    - ResourceRegistry 能注册/注销资源条目，支持优先级覆盖
+    - 模式切换骨架可在三种模式间切换（仅日志，无实际 UI）
+    - 无编译错误，无运行时异常
+
+================================================================================
+四、Iter-1：极简模式 + AI 对话
+================================================================================
+
+目标：实现极简模式，完成 AI 对话核心链路，交付可文字交流的桌宠。
+
+4.1 任务清单
+    T1-01  AI 服务层：
+            - IAIProvider 接口定义（SendChatAsync / ProviderName / IsAvailable）
+            - MockProvider（离线模拟响应，开发与无网络时使用）
+            - OpenAICompatibleProvider（通用 OpenAI 协议兼容，对接豆包/千问/
+              Deepseek/Grok/本地 Ollama/vLLM 等，用户填 endpoint+model+apiKey 即可）
+            - AIService 编排（SetProvider / ChatAsync / Cancel）
+            - AIResponse 解析 + actions[] 数组分发 + 多级降级（L0~L3）
+            - 非 OpenAI 协议模型由插件实现 IAIProvider 接口扩展
+    T1-02  对话层：
+            - DialogueManager（对话流程）
+            - DialogueHistory（按天存储 + Token 裁剪）
+            - PromptManager（System Prompt 构建：
+              本体基础设定 + 插件 AISegment(IAIContextProvider) + 可用动作清单(IAIActivatable) + 对话历史）
+            - ChatMessage 数据结构
+    T1-03  极简模式 UI：
+            - MinimalModePanel（头像 + 对话气泡 + 输入框）
+            - 右键菜单（模式切换 / 设置 / 退出）
+            - 窗口拖拽
+    T1-04  极简模式逻辑：
+            - MinimalMode 实现 IMode
+            - 仅加载头像贴图 + 对话框 UI
+            - 不加载 Animator / 音频
+    T1-05  设置面板（AI Provider 配置）：
+            - Provider 选择 / Key / Endpoint / 模型 / 温度
+            - 保存到 provider_config.json（apiKey AES 加密）
+    T1-06  持久化基础：
+            - SaveManager（JSON 存档管理）
+            - settings.json / provider_config.json 读写
+    T1-07  管家脚本模式：
+            - 新手教程引导流程（固定对话树）
+            - 异常反馈叙事化包装（跨界通讯联络员）
+            - 管家皮套切换 UI（三套内置皮套）
+
+4.2 交付物
+    - Assets/Scripts/AI/  （AI 服务层全部代码）
+    - Assets/Scripts/Dialogue/  （对话层全部代码）
+    - Assets/Scripts/UI/MinimalModePanel.cs
+    - Assets/Scripts/UI/SettingPanel.cs
+    - Assets/Scripts/Mode/MinimalMode.cs
+
+4.3 验收标准
+    - 极简模式窗口显示头像 + 对话框
+    - 输入文字后能收到 AI 回复（Mock 或真实 API）
+    - 设置面板中填入 endpoint+model+apiKey 即可对接任意 OpenAI 兼容模型
+    - 右键菜单可切换模式、打开设置、退出
+    - 设置面板可配置 AI Provider 并保存（apiKey 加密落盘）
+    - AI 返回结构化 JSON 时能正确解析，失败时降级为纯文字
+    - 极简模式内存占用 ≤ 100MB
+
+================================================================================
+五、Iter-2：日常模式 + 宠物系统
+================================================================================
+
+目标：实现完整桌宠体验，包含宠物实体、状态机、情感系统、动画联动。
+
+5.1 任务清单
+    T2-01  宠物领域层：
+            - Pet 实体 + PetStats 数值属性
+            - PetState 状态机（Idle/Happy/Sad/Sleeping/Eating）
+            - EmotionSystem 多维度情感 + 时间衰减
+            - BehaviorDispatcher（AIResponse → 动画/表情/文字）
+    T2-02  宠物数据：
+            - PetSpeciesInfo Excel 表 + .Bo 生成
+            - PetPersonaInfo Excel 表 + .Bo 生成
+            - PetActionInfo Excel 表 + .Bo 生成
+            - PetEmotionInfo Excel 表 + .Bo 生成
+            - BinaryDataMgr 加载配置
+    T2-03  表现层：
+            - PetAnimator（Animator 状态控制）
+            - EmotionController（表情切换）
+            - PetView（MonoBehaviour，挂宠物 GameObject）
+    T2-04  日常模式 UI：
+            - InteractiveModePanel
+            - PetInfoPanel（数值显示）
+            - 对话气泡（打字机效果）
+    T2-05  日常模式逻辑：
+            - InteractiveMode 实现 IMode
+            - 点击互动（反应动画 + 情感值）
+            - 拖拽移动
+            - 喂食/玩耍功能
+            - 数值随时间衰减（TimerMgr 驱动）
+    T2-06  音效系统：
+            - MusicMgr 接入日常模式 BGM
+            - 互动音效播放
+
+5.2 交付物
+    - Assets/Scripts/Pet/  （宠物领域层全部代码）
+    - Assets/Scripts/View/  （表现层代码）
+    - Assets/Scripts/Mode/InteractiveMode.cs
+    - Excel 配置表 + .Bo 文件
+
+5.3 验收标准
+    - 宠物模型显示，有 idle 动画
+    - 点击宠物触发反应动画 + 心情/亲密度变化
+    - AI 对话时宠物有对应表情和动作
+    - 数值随时间变化（饥饿度上升、体力恢复）
+    - 喂食/玩耍可改变数值
+    - 日常模式内存占用 ≤ 500MB
+
+================================================================================
+六、Iter-3：游戏模式 + 小游戏
+================================================================================
+
+目标：实现全屏窗口模式，包含捉宠小游戏与宠物图鉴。
+
+6.1 任务清单
+    T3-01  游戏模式 UI：
+            - WindowModePanel（全屏窗口）
+            - MiniGamePanel（小游戏入口列表）
+            - PetCollectionPanel（图鉴）
+            - 个性化设置面板（人设编辑、宠物选择）
+    T3-02  游戏模式逻辑：
+            - WindowMode 实现 IMode
+            - 从悬浮窗切换到全屏窗口
+    T3-03  捉宠小游戏：
+            - CatchPetGame（随机出现野生宠物）
+            - 点击交互捕捉
+            - 捕获率计算（稀有度 + 道具）
+            - 捕获成功加入图鉴
+    T3-04  宠物图鉴：
+            - PetCollection 数据管理
+            - collection.json 存档
+            - 图鉴 UI 展示
+    T3-05  物品系统：
+            - ItemInfo Excel 表 + .Bo
+            - 背包 UI + 使用逻辑
+    T3-06  对话历史查看面板
+
+6.2 交付物
+    - Assets/Scripts/Mode/WindowMode.cs
+    - Assets/Scripts/MiniGame/CatchPetGame.cs
+    - Assets/Scripts/UI/PetCollectionPanel.cs
+    - Assets/Scripts/Item/  （物品系统）
+
+6.3 验收标准
+    - 可从悬浮窗切换到全屏窗口
+    - 捉宠小游戏可正常游玩（出现→捕捉→成功/失败）
+    - 捕获的宠物出现在图鉴中
+    - 图鉴数据持久化（重启后保留）
+    - 人设可编辑并保存
+
+================================================================================
+七、Iter-4：插件系统 + 管家插件 + 壁纸插件
+================================================================================
+
+目标：完善插件加载流程，实现管家插件完整功能与第一个功能插件（壁纸插件）。
+
+7.1 任务清单
+    T4-01  插件系统完善：
+            - PluginManager 支持从 Addressables 加载插件资源
+            - 插件清单 plugin.json 解析
+            - 插件依赖检查
+            - 插件生命周期管理（OnLoad/OnUnload/OnUpdate）
+            - 插件间通过 EventCenter 通信
+            - ResourceRegistry 资源注册中心集成
+            - IResourceProvider 资源注册/注销
+            - IAIActivatable 能力注册与 AI 调用
+            - IDataExportable 数据导出/导入（重要插件删除前导出）
+    T4-02  内置插件注册机制：
+            - PluginManager 启动时扫描内置插件
+            - 插件启用/禁用管理
+    T4-03  管家插件完善：
+            - 管家 AI 驱动模式（成为桌宠，走正常 AI 对话链路）
+            - 管家内核身份注入 System Prompt（影响外核人设）
+            - 管家皮套切换同步切换人设/语言风格
+            - 管家数据导出/导入（当前皮套/模式等）
+            - 管家资源管理入口（图鉴/背包/插件管理面板）
+    T4-04  壁纸插件实现：
+            - WallpaperPlugin 实现 IPlugin + IResourceProvider
+            - 壁纸源选择（宠物渲染 / 静态图片）
+            - 适配方式（填充/适应/拉伸/居中/平铺）
+            - Windows 壁纸设置（P/Invoke SystemParametersInfo）
+            - wallpaper_settings.json 持久化
+            - 壁纸预览
+    T4-05  插件 UI 集成：
+            - 插件管理器面板（查看已安装插件，分类展示）
+            - 壁纸设置面板
+            - 重要插件卸载确认+数据导出对话框
+
+7.2 交付物
+    - Assets/Scripts/Plugin/Wallpaper/WallpaperPlugin.cs
+    - Assets/Scripts/UI/WallpaperPanel.cs
+    - 更新后的 PluginManager
+
+7.3 验收标准
+    - PluginManager 能加载并运行壁纸插件
+    - 可将宠物渲染或本地图片设为桌面壁纸
+    - 壁纸设置持久化
+    - 插件可正常卸载且无内存泄漏
+
+================================================================================
+八、Iter-5：优化与发布
+================================================================================
+
+目标：性能优化、Bug 修复、打包发布。
+
+8.1 任务清单
+    T5-01  性能优化：
+            - 极简模式内存压缩（对象池、资源卸载）
+            - 日常模式内存优化（模型资源按宠物加载）
+            - 模式切换资源卸载验证（3 秒内释放）
+            - AI 请求超时与取消
+    T5-02  Bug 修复与稳定性：
+            - 全流程回归测试
+            - 异常兜底（网络断开、API 失败、JSON 解析失败）
+            - 存档损坏恢复
+    T5-03  打包测试：
+            - Windows 透明无边框窗口
+            - 安装包制作
+    T5-04  文档完善：
+            - 用户使用说明
+            - 插件开发指南
+
+8.2 验收标准
+    - 极简模式内存 ≤ 100MB
+    - 日常模式内存 ≤ 500MB
+    - 模式切换后 3 秒内释放上一模式资源
+    - 无致命 Bug，可稳定运行 24 小时
+
+================================================================================
+九、插件开发详细流程（Iter-4 子流程）
+================================================================================
+
+本节为插件系统的逐步实现流程，供 Iter-4 按步执行。
+
+步骤 1：定义插件契约（Iter-0 已完成）
+  - IPlugin 接口：PluginId / PluginName / Version / OnLoad / OnUnload / OnUpdate
+  - PluginManifest：插件清单数据结构（含 isImportant / category）
+  - IResourceProvider：RegisterResources / UnregisterResources
+  - IAIActivatable：GetExposedActions / ExecuteAction
+  - IDataExportable：ExportData / ImportData / ExportDescription
+  - ResourceRegistry：资源注册中心（框架核心服务，非插件）
+
+步骤 2：内置插件加载
+  - PluginManager 维护 Dictionary<string, IPlugin> loadedPlugins
+  - 启动时注册内置插件（代码中 new 实例）
+  - 若实现 IResourceProvider：调用 RegisterResources 注册资源到 ResourceRegistry
+  - 若实现 IAIActivatable：将动作注册为 ResourceRegistry Capability 条目
+  - 调用 OnLoad，加入 Update 循环
+
+步骤 3：资源型插件加载（Addressables）
+  - 插件目录结构：
+    PluginName/
+      ├── plugin.json     清单
+      ├── (Addressables 资源组) 资源
+      └── (v1 无脚本，逻辑编译在主程序集)
+  - PluginManager.LoadPlugin(manifestPath)
+    1. 读取 plugin.json 解析 PluginManifest
+    2. 检查依赖是否已加载
+    3. AddrMgr 加载对应 Addressables 资源
+    4. 实例化入口类（v1 为内置类型，通过反射或工厂创建）
+    5. 注册资源/能力（IResourceProvider / IAIActivatable）
+    6. 调用 OnLoad
+
+步骤 4：插件通信
+  - 插件通过 EventCenter 与本体/其他插件通信
+  - 禁止插件直接持有其他插件引用
+  - 插件可注册自己的事件到 E_EventType（建议用字符串扩展）
+  - 资源/UI/能力通过 ResourceRegistry 统一取用
+
+步骤 5：插件卸载
+  - PluginManager.UnloadPlugin(pluginId)
+    1. 重要插件且实现 IDataExportable：触发 E_PluginDataExportRequested 事件
+    2. 调用 OnUnload
+    3. 若实现 IResourceProvider：调用 UnregisterResources
+    4. ResourceRegistry.UnregisterByPlugin 清理该插件所有条目
+    5. 卸载对应 AB 包
+    6. 清理事件监听
+
+步骤 6：插件 UI 注入
+  - 插件可通过 UIMgr 注册自己的面板
+  - 面板资源从插件 AB 包加载
+  - 插件面板继承 BasePanel
+  - UI 美化插件可通过 ResourceRegistry 注册高优先级 UI 条目覆盖原生 UI
+
+步骤 7：管家插件实现（内置核心插件示例）
+  7.1 实现 IPlugin + IAIActivatable + IDataExportable + IResourceProvider
+  7.2 StewardCore 内核：自知管家/工具身份，管理运行模式与外核切换
+  7.3 StewardSkin 外核：皮套人设，内置三套（机器人/鹦鹉/小孩）
+  7.4 脚本模式：新手教程固定对话树 + 异常反馈叙事化包装
+  7.5 AI 模式：内核身份注入 System Prompt，叠加外核人设
+  7.6 数据导出：当前皮套/模式等数据，重装可恢复
+
+步骤 8：壁纸插件实现（第一个功能插件示例）
+  8.1 实现 IPlugin + IResourceProvider
+  8.2 OnLoad 中注册壁纸设置面板和资源到 ResourceRegistry
+  8.3 实现壁纸源：
+      - 宠物渲染：Camera.RenderToTexture → 保存临时图 → 设壁纸
+      - 静态图片：用户选择本地路径
+  8.4 Windows API：
+      [DllImport("user32.dll")]
+      static extern int SystemParametersInfo(int uAction, int uParam, string lpvParam, int fuWinIni);
+  8.5 持久化 wallpaper_settings.json
+
+步骤 9：未来热更新扩展点（v1 不实现，仅预留）
+  - 外部脚本加载：预留 IPlugin 入口类的脚本加载接口
+  - 未来接入 Lua 热更时，PluginManager.LoadPlugin 增加 Lua 脚本加载步骤
+  - 签名校验：预留 manifest 签名字段，v1 不校验
+
+================================================================================
+十、风险与应对
+================================================================================
+
+10.1 AI 输出不稳定
+    应对：AIResponse 多层降级（结构化 → 纯文字 → 默认回复）
+    验证：Iter-1 重点测试
+
+10.2 插件架构过于复杂
+    应对：v1 仅支持内置插件 + 资源型 Addressables 插件，不支持外部脚本
+    预留：IPlugin 接口不变，未来通过 Lua 热更扩展脚本加载
+
+10.3 透明窗口兼容性
+    应对：Windows 优先实现，移动端后续版本
+    验证：Iter-1 验证极简模式窗口
+
+10.4 内存超标
+    应对：模式切换强制卸载资源，对象池复用，极简模式不加载非必要资源
+    验证：Iter-5 性能测试
+
+================================================================================
+                            —— 文件结束 ——
+================================================================================

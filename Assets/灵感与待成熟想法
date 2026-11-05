@@ -1,0 +1,455 @@
+================================================================================
+        AIPetStandAlone 灵感与待成熟想法 (Ideas & Incubating Concepts)
+================================================================================
+用途：记录因暂时不成熟、不完善而未写入《软件需求规格说明》《版本开发流程设计》
+      《数据设计词典》的灵感、想法、功能草案。
+      待想法成熟后，移入对应正式文档，并在此处标记 [已迁移]。
+编码：UTF-8 (无 BOM)
+================================================================================
+
+================================================================================
+目录
+================================================================================
+一、AI 对话与行为调度相关
+  1.1 AI 输出结构升级（actions[]）[已迁移]
+  1.2 插件能力注册机制 IAIActivatable [已迁移]
+  1.3 宠物自主行为触发（待评估）
+  1.4 AI 输出解析多级降级 [已迁移]
+  1.5 AI 输入插件可扩展机制 IAIContextProvider [已迁移至 Iter-1]
+  1.6 AI 可读文件知识库 IAIDocumentProvider [延后至 Iter-2/3]
+  1.7 AI Provider 通用化设计 [已落地]
+  1.8 AIResponse 输出格式不可修改 [已落地]
+二、管家 / 联络员 角色
+  2.1 管家角色定位 [已迁移] / 2.2 双内核设计 [已迁移] / 2.3 跨界通讯叙事包装 [已迁移]
+三、其他灵感
+  3.1 皮套形象体系（待孵化）/ 3.2 万物皆插件 [已落地] /
+  3.3 Excel 配置表驱动 [已落地] / 3.4 数据安全 [已落地]
+四、应用定位与外部集成（被 dsh 等应用作为插件调用）[可行性分析中]
+  4.1 定位重述 / 4.2 双方技术栈对比 / 4.3 核心矛盾（运行时异构）/
+  4.4 可行方案 A/B/C / 4.5 推荐方案：MCP Server / 4.6 架构映射 /
+  4.7 实施路线图 / 4.8 风险与应对
+五、迁移记录
+
+================================================================================
+一、AI 对话与行为调度相关
+================================================================================
+
+1.1 AI 输出结构升级：action → actions[] 数组 [已迁移]
+    现状：AIResponse 只有 reply / emotion / action(单字符串) / intent
+    想法：将 action 升级为 actions[] 数组，支持时序动作序列：
+      {
+        "reply": "嘿嘿，我来玩局三消~",
+        "emotion": "playful",
+        "actions": [
+          { "type": "animation", "name": "cheer", "duration": 1.2 },
+          { "type": "expression", "name": "smile" },
+          { "type": "plugin", "pluginId": "com.aipet.match3",
+            "action": "startGame", "params": { "difficulty": "easy" } }
+        ]
+      }
+    动作 type 枚举：animation / expression / sound / plugin / delay
+    状态：已迁移至 SRS 第 10 章、数据设计词典 2.5
+
+1.2 插件能力注册机制 IAIActivatable [已迁移]
+    想法：插件实现可选接口 IAIActivatable，向 AI 暴露可调用动作：
+      - GetExposedActions() → List<PluginActionDef>
+      - ExecuteAction(actionName, params) → object
+    PluginManager 维护能力注册表，PromptManager 动态将可用动作清单
+    拼入 System Prompt，AI 即可在 actions 中调用插件。
+    安全控制：PluginActionDef.AllowSelfTrigger 控制是否允许 AI 自主触发。
+    状态：已实现于 Assets/Scripts/Framework/Plugin/IAIActivatable.cs，
+          已迁移至 SRS 8.1/9.11、数据设计词典 5.1.2
+
+1.3 宠物自主行为触发（待评估，仍在孵化）
+    想法：宠物不只是被动响应用户，还能因「无聊值」达到阈值而主动发起行为。
+    机制：无聊值↑ → 定时器触发「自检消息」发给 AI → AI 决定
+         （继续等待 / 主动说话 / 玩小游戏 / 睡觉）→ 执行后无聊值↓
+    极简模式下降低频率或禁用，避免打扰用户。设置中可开关。
+    状态：待评估，需考虑性能与体验平衡
+    备注：IAIActivatable 的 allowSelfTrigger 已为此机制预留能力
+
+1.4 AI 输出解析多级降级 [已迁移]
+    L0 正常 → L1 缺字段仅显示文字 → L2 JSON 失败当纯文字 → L3 兜底语
+    状态：已迁移至 SRS 10.3、数据设计词典 2.5
+
+1.5 AI 输入（System Prompt）的插件可扩展机制 [已迁移至 Iter-1]
+    背景：现有 System Prompt 由 StewardCore.BuildSystemPrompt() 硬编码构建，
+          仅包含「管家内核身份 + 外核人设」，插件无法追加自己需要让 AI
+          知道的信息（如插件世界观、规则要求、当前状态、人设补充等）。
+    优化方向：由插件主动「提交」自己需要交给 AI 处理的信息片段，本体统一拼接。
+    设计：
+      1. 新增可选接口 IAIContextProvider：
+           List<AISegment> GetAISegments()
+         AISegment 数据结构：
+           - segmentId：片段唯一 ID（如 "wallpaper.rules"）
+           - category：类别 persona / world / rules / state / knowledge / custom
+           - content：片段内容（纯文本，由 PromptManager 拼接）
+           - priority：优先级（数值越大越靠前，本体基础设定优先级最高）
+           - required：是否必须包含（false 时 Token 紧张可裁剪）
+      2. PromptManager 统一拼接 System Prompt：
+           [本体基础设定] 管家内核身份 + 当前宠物人设（priority=100）
+         + [插件上下文片段] 按 priority 排序的 AISegment（来自 IAIContextProvider）
+         + [可用动作清单] 来自 IAIActivatable.GetExposedActions() 的描述
+         + [对话历史摘要] 最近 N 轮对话（Token 裁剪）
+      3. 与 IAIActivatable 的职责分工：
+           IAIActivatable    → AI 能「调用什么」（输出侧，动作）
+           IAIContextProvider → AI 需要「知道什么」（输入侧，上下文）
+         两者正交，插件可按需实现其中一个或两个。
+      4. 复用 ResourceRegistry：
+         在 E_RegistryCategory 中新增 AIContext 类别，
+         插件注册时走 Register(AIContext, ...)，复用优先级覆盖、
+         插件卸载自动清理等现有机制。
+    状态：已迁移至 Iter-1 PromptManager 实现。
+    备注：Iter-1 阶段仅管家插件提供 AISegment，后续插件自动接入。
+
+1.6 AI 可读文件知识库（AI 按需读取的注册中心）[延后至 Iter-2/3]
+    背景：AI 对话需要长期记忆与知识库（沟通记录、世界设定、人设信息、
+          宠物/物品图鉴等），但不能每次把全部内容塞进 Prompt（Token 超限）。
+          需要一种「像游戏资源一样统一注册管理」的 AI 可读文件机制，
+          让获得读取权限的 AI 按需读取。
+    状态：延后至 Iter-2（日常模式有宠物数值）或 Iter-3（图鉴系统）再接入。
+    理由：Iter-1 极简模式只有文字对话，无图鉴/物品/复杂世界观，知识库需求不强。
+
+    设计草案：
+      1. 新增可选接口 IAIDocumentProvider：
+           List<AIDocumentDef> GetAIDocuments()
+           string ReadDocument(string docId)
+         AIDocumentDef 数据结构：
+           - docId：文件唯一 ID（如 "world.setting"、"chat.2026-10-19"）
+           - docName：显示名称
+           - category：类别 chat_log / world_setting / persona /
+                       item_book / pet_book / custom
+           - summary：摘要（短文本，由本体注入 Prompt，让 AI 知道有哪些文件）
+           - filePath：文件路径（运行时 JSON 文件，可选）
+           - content：直接内嵌内容（小文件可用，无需读盘）
+           - allowDirectRead：是否允许 AI 直接读取全文
+           - pluginId：提供者插件
+
+      2. 注册管理：
+         复用 ResourceRegistry，新增 E_RegistryCategory.AIDocument 类别。
+         插件通过 Register(AIDocument, docId, AIDocumentDef, ...) 注册。
+         本体基础文件（对话历史摘要、当前人设）由 core 注册。
+         插件卸载时自动清理其注册的文件条目。
+
+      3. AI 读取方式（两种，可并存）：
+         (a) 摘要注入：PromptManager 将所有 AIDocumentDef.summary 拼入
+             System Prompt，AI 据此知道「有哪些文件、大概内容是什么」。
+         (b) 按需读取全文：AI 通过 actions[] 中 type=plugin 项调用
+             统一动作 read_document(docId)，本体路由到对应
+             IAIDocumentProvider.ReadDocument(docId) 返回内容。
+             适用于大文件（完整对话记录、图鉴详情），避免 Prompt 常驻。
+
+      4. 与 IAIContextProvider 的区别：
+         IAIContextProvider → 每次对话都要注入的「常驻上下文」（短文本）
+         IAIDocumentProvider → 按需读取的「知识库文件」（可能很长）
+         前者解决「AI 必须知道的事」，后者解决「AI 可能要查的事」。
+
+      5. 安全控制：
+         allowDirectRead=false 的文件，AI 只能看到 summary，不能读全文。
+         可扩展 read 权限等级（仅摘要 / 全文 / 可写入）。
+
+    合理性：高。AI 长期记忆 + 知识库是桌宠智能对话的刚需，且统一注册管理
+             符合「万物皆插件」架构。
+    可完成性：高。复用 ResourceRegistry，新增一个接口 + 数据类 +
+             read_document 统一动作路由即可。
+    风险：全文读取可能超 Token → 摘要注入 + 按需读取 + Token 预算控制。
+
+    与 1.5 的关系：1.5 解决「每次给 AI 塞什么上下文」，1.6 解决「AI 需要时
+    能查什么文件」，两者互补，共同构成完整的「AI 输入可扩展框架」。
+
+1.7 AI Provider 通用化设计 [已落地]
+    问题：原方案逐个实现 DoubaoProvider / QwenProvider / ...，
+          代码重复率 90%+，且用户接入新模型（Deepseek/Claude/Grok/
+          本地 Ollama/vLLM）需要改代码重新编译。
+    方案：仅内置两个 Provider：
+      - MockProvider：离线模拟，开发与无网络时使用
+      - OpenAICompatibleProvider：通用 OpenAI 协议兼容，对接所有遵循
+        OpenAI Chat Completions 格式的模型（豆包/千问/Deepseek/Grok/
+        本地 Ollama/vLLM/LM Studio 等），用户只需填 endpoint+model+apiKey
+    扩展：非 OpenAI 协议的模型（如 Claude 原生 API）由插件实现
+          IAIProvider 接口扩展，符合「万物皆插件」。
+    状态：已落地，详见版本开发流程设计 Iter-1 T1-01
+
+1.8 AIResponse 输出格式不可修改 [已落地]
+    问题：插件是否可以修改 AIResponse 的输出结构（如新增字段）？
+    结论：不可以。AIResponse 是本体与 AI 之间的通信协议（类似 HTTP 状态码），
+          一旦定下来就不能随便改，否则所有消费者（BehaviorDispatcher/UI/存档）
+          都要跟着改，违反「本体核心不可替换」原则。
+    扩展方式（折中方案）：
+      - 输入侧扩展：插件通过 IAIContextProvider 告诉 AI 「该怎么回复」
+        （如规则要求），但不改变 AIResponse 结构。
+      - 输出侧扩展：插件需要的额外数据放在 actions[] 的 plugin 动作的
+        params 中（params 本身是 object 类型，可放任意 JSON）。
+      - 文本解析：简单需求可让 AI 在 reply 文本中用约定标记输出，插件正则提取。
+    状态：已落地，AIResponse 结构固定，插件通过 IAIContextProvider +
+          IAIActivatable 两个正交接口扩展能力。
+
+================================================================================
+二、管家 / 联络员 角色（本次讨论新增）
+================================================================================
+
+2.1 管家角色定位 [已迁移]
+    想法：本体内置一个基础「管家」角色，承担多重身份：
+      (a) 新手教程引导者：用户首次启动时，按固定脚本流程指引完成设置
+          （AI Provider 配置、模式选择、基础操作介绍）
+      (b) 跨界通讯联络员：将「用户 ↔ 桌宠」的沟通包装成「联通不同世界的
+          跨界通讯」，管家作为中继站。
+      (c) 异常反馈代言人：AI 连接失败 / 断联 / 未知异常时，由管家以
+          「跨界信号中断」等叙事化语言告知用户，避免出戏。
+      (d) 资源管理入口：玩家通过管家便捷管理游戏资源
+          （宠物图鉴、物品背包、插件管理等）
+      (e) 可选宠物化：后续可按用户意愿让管家加入桌宠行列，
+          接受 AI 调度与聊天（与普通宠物一致）。
+    状态：已实现骨架于 Assets/Scripts/Plugin/Steward/，
+          已迁移至 SRS 8.4、数据设计词典 2.11/2.12
+
+2.2 管家的双内核设计 [已迁移]
+    模式 A：脚本模式（新手教程 / 异常反馈）—— 固定对话树，不依赖 AI
+    模式 B：AI 驱动模式（成为宠物后）—— 走正常 AI 对话链路
+    切换条件：用户完成教程后可选择「让管家成为桌宠」即切换到模式 B
+    补充确认：管家拥有内核和外核。内核里它自知自己是一个「管家」甚至「工具」，
+    只有在使用 AI 时能够「智能沟通」而这也会影响到它的外核人设；外核是「皮套人设」，
+    是身体，也是可替换身份所以切换皮套时同步切换人设/语言风格。
+    状态：已实现 E_StewardMode + StewardCore/StewardSkin，
+          已迁移至 SRS 8.4
+
+2.3 跨界通讯叙事包装 [已迁移]
+    核心目的：用叙事消解技术问题的出戏感。
+    示例：
+      - AI 响应慢 → 管家：「跨界通讯延迟较高，请稍候…」
+      - 连接失败 → 管家：「跨界信号似乎被干扰了，正在尝试重新建立连接…」
+      - 未知异常 → 管家：「通讯晶石出现异常波动，我去排查一下…」
+    实现：AIService 的错误回调统一走管家的 LiaisonFeedback 接口，
+          由管家根据错误类型选择对应叙事台词。
+    状态：已实现 StewardCore.GetLiaisonFeedback
+
+================================================================================
+三、其他灵感
+================================================================================
+
+3.1 「皮套」形象体系（待孵化）
+    想法：桌面宠物的「皮套」形象可高度自定义，用户可自行绘制或导入，
+    平台提供官方「皮套」资源供下载安装，降低创作门槛。
+    （类似 Live2D 商店、装扮玩法的结合）
+    状态：概念方向，待细化
+
+3.2 万物皆插件的开发思想 [已落地]
+    架构核心：所有可变内容都通过插件机制实现，本体只提供不可替换的框架核心。
+    本体核心（不可替换）：单例框架/事件总线/资源加载核心/UI框架核心/
+    插件系统核心/ResourceRegistry/存档/AI协议/模式调度
+    插件可替换：UI资源/宠物模型动画/音效/AI Provider/小游戏/壁纸/管家皮套/
+    物品/对话模板等
+    状态：已落地，详见 SRS 8.1
+
+3.3 Excel 配置表驱动 [已落地]
+    数据驱动：物种/物品/对话模板/兑换规则等均用 Excel 配置表，策划可调。
+    运行时编译或启动加载，热更友好。
+    兑换规则表：跨插件资源兑换，定义 ExchangeItemDef（id/名称/来源插件/消耗/产出/描述）。
+    管家的物种配置放在管家插件部分，随删除一同消失，不影响应用本体。
+    状态：已落地，详见 SRS 第 12 章
+
+3.4 数据安全 [已落地]
+    API Key 本地 AES 加密存储，不回传服务器。
+    重要插件删除前通过 IDataExportable 接口可导出数据，重装后恢复。
+    状态：已落地 IDataExportable 接口
+
+================================================================================
+四、应用定位与外部集成（被 dsh 等应用作为插件调用）[可行性分析中]
+================================================================================
+
+4.1 定位重述
+    基于「万物皆插件」理念，本应用除自主运行（桌面宠物 + AI 对话）外，
+    还应能被 DeepSeek Harness (dsh) 等外部 AI Agent 运行时作为插件调用，
+    让外部 Agent 可以：
+      - 与桌宠对话 / 控制宠物行为 / 切换模式
+      - 读取宠物状态（情绪/能量/亲密度等）
+      - 调用插件注册的能力（IAIActivatable）
+      - 读取 AI 上下文（IAIContextProvider）
+    即：AIPet 既是「宿主（加载自有插件）」，也可以是「被调用方（作为
+    外部 Agent 的能力提供者）」。
+
+4.2 双方技术栈对比
+    AIPetStandAlone 侧：
+      - 运行时：Unity 2022.3 LTS + Mono/IL2CPP（C#）
+      - 窗口：Windows 透明无边框窗口（独立 OS 进程）
+      - 插件体系：自研 IPlugin + PluginManager（进程内反射加载）
+      - 事件总线：EventCenter（进程内观察者模式）
+      - AI 接口：IAIProvider（Mock + OpenAICompatibleProvider）
+      - 资源管理：Addressables（AddrMgr）
+      - 持久化：JSON + Excel→.Bo 二进制
+      - 网络：UnityWebRequest（仅 HTTP 客户端，无服务端）
+    DeepSeek Harness (dsh) 侧：
+      - 运行时：Node.js 18+ / TypeScript
+      - 内核：Cordis（服务注册、依赖注入、可逆副作用）
+      - 插件形态：npm 包（Cordis plugin：name/inject/Config/apply）
+      - UI：Web（浏览器，npx @deepseek-ai/dsh web）
+      - 能力模型：models / tools / skills / sessions / sandboxes /
+                  storage / loops / scheduling / UI
+      - MCP 支持：有（dsh 可作为 MCP 客户端连接外部 MCP Server）
+      - 协议：Cordis 内部事件 + MCP（JSON-RPC 2.0）
+
+4.3 核心矛盾：运行时异构
+    dsh 的「插件」是运行在 dsh 进程内的 TypeScript/npm 包，
+    而 AIPet 是独立的 C#/Unity 进程。因此 AIPet 不可能直接作为
+    dsh 的 Cordis 插件被进程内加载。可行的集成方式必然是
+    「跨进程通信 (IPC)」，而非进程内插件。
+    关键判断：
+      - 可行性：高。跨进程通信是成熟方案，AIPet 只需暴露一个
+        标准化的外部接口层。
+      - 架构契合度：高。AIPet 现有的 IAIActivatable /
+        IAIContextProvider / ResourceRegistry 天然映射到 MCP
+        的 tools / resources 概念。
+
+4.4 可行方案
+    ── 方案 A：MCP Server（推荐）────────────────────────────────
+    AIPet 实现一个 MCP Server，对外暴露 tools / resources / prompts。
+    dsh 作为 MCP Client 连接 AIPet 的 MCP Server，
+    dsh 内的 Agent 即可在对话中调用 AIPet 暴露的工具。
+    传输层可选：stdio（dsh 直接 spawn AIPet 进程）或 HTTP/SSE。
+    C# 侧有官方 SDK：NuGet 包 ModelContextProtocol（微软+Anthropic 维护，MIT）。
+
+    优点：
+      - 标准化，不仅支持 dsh，还支持 Claude Code / Cursor / VSCode
+        Copilot 等任意 MCP 主机，通用性最强。
+      - 与 AIPet 现有 IAIActivatable/IAIContextProvider 高度同构，
+        映射直接，几乎零概念转换成本。
+      - MCP 协议有类型化的 tool schema（JSON Schema），dsh 的 LLM
+        可自动理解参数。
+    缺点：
+      - 需要引入 ModelContextProtocol NuGet 包（Unity 需通过
+        NuGetForUnity 或手动放 dll），增加依赖。
+      - MCP 协议仍在快速演进（streaming 等新特性），需跟进版本。
+
+    ── 方案 B：本地 HTTP API + dsh 薄插件 ────────────────────────
+    AIPet 内置一个本地 HTTP Server（HttpListener / ASP.NET Core /
+      或自写 TCP），暴露 REST 接口（如 POST /api/chat、GET /api/status）。
+    另写一个 dsh 插件（npm 包，TypeScript），在 apply() 中向 dsh
+    注册 tools，tool 实现内部 fetch AIPet 的 HTTP 接口。
+    该插件还可负责拉起 AIPet 进程（child_process.spawn）。
+
+    优点：
+      - 实现简单，Unity 侧用 HttpListener 即可，无需新依赖。
+      - dsh 插件可定制 UI 面板（在 dsh Web 中嵌入宠物状态卡片）。
+    缺点：
+      - 需要维护两套代码（C# HTTP 服务 + TS dsh 插件）。
+      - 非标准化，换一个宿主就要重写对接层。
+
+    ── 方案 C：Named Pipe / stdin-stdout JSON ────────────────────
+    AIPet 启动时监听命名管道（或 stdin/stdout），与 dsh 插件
+    建立私有 JSON 协议。
+    优点：延迟最低、最私密。
+    缺点：完全私有协议，无法复用任何生态工具，调试困难，不推荐。
+
+4.5 推荐方案：MCP Server（方案 A）为主，方案 B 为辅
+    主路径：AIPet 实现 MCP Server，暴露核心能力。
+    辅助：可提供一个轻量 dsh 插件（npm 包），仅用于：
+      - 自动拉起 AIPet 进程（若未运行）
+      - 在 dsh Web UI 中嵌入宠物实时画面/状态（可选）
+    理由：MCP 是 AI 工具集成的事实标准，一次实现，多宿主可用；
+    且与 AIPet 现有架构语义对齐，长期维护成本最低。
+
+4.6 架构映射（MCP Server ↔ AIPet 内部）
+    MCP Server 层（新增，建议放 Assets/Scripts/Framework/External/）：
+      ┌─────────────────────────────────────────┐
+      │           McpServerBridge               │
+      │  - 启动 MCP Server (stdio / HTTP)       │
+      │  - 桥接 EventCenter 事件 ↔ MCP 通知     │
+      └──────────────┬──────────────────────────┘
+                     │ 调用
+      ┌──────────────▼──────────────────────────┐
+      │  内部服务（已存在，零改动或极小改动）    │
+      │  - PluginManager → 列出/调用插件能力     │
+      │  - IAIActivatable[] → MCP tools          │
+      │  - IAIContextProvider[] → MCP resources  │
+      │  - AIService → chat 工具                 │
+      │  - PetRuntime → 状态查询/行为触发工具    │
+      │  - ModeManager → 模式切换工具            │
+      └─────────────────────────────────────────┘
+
+    具体映射：
+      MCP Tools  ←  IAIActivatable.GetActions() 每个 PluginActionDef 生成一个 tool
+                    （name = pluginId.actionName，inputSchema 由参数类型推导）
+      MCP Tools  ←  核心内置工具：aipet.chat / aipet.set_mood /
+                    aipet.get_status / aipet.switch_mode / aipet.list_plugins
+      MCP Resources ← IAIContextProvider.GetContextSegments() 每个段暴露为 resource
+                    （uri = aipet://context/{pluginId}/{segmentId}）
+      MCP Prompts  ←  对话模板（可选，延后）
+
+4.7 实施路线图（建议放在 Iter-4 之后或作为独立里程碑）
+    前置依赖：Iter-1（AIService + IAIActivatable + IAIContextProvider 落地）
+    第 1 步（接口层）：
+      - 新增 McpServerBridge（MonoBehaviour，挂 GameManager）
+      - 用 ModelContextProtocol SDK 启动 MCP Server（先 stdio 传输）
+      - 实现核心内置 tools：aipet.chat、aipet.get_status、aipet.switch_mode
+    第 2 步（插件能力桥接）：
+      - 遍历 PluginManager.GetAllActions()，动态注册为 MCP tools
+      - 遍历 IAIContextProvider，注册为 MCP resources
+    第 3 步（dsh 对接验证）：
+      - 在 dsh 中配置连接 AIPet 的 MCP Server
+      - 验证 Agent 能调用宠物对话/状态/插件能力
+    第 4 步（可选增强）：
+      - 提供 dsh 侧 npm 插件，负责拉起 AIPet 进程
+      - dsh Web UI 嵌入宠物画面（截图/Spout 共享纹理）
+
+4.8 风险与应对
+    风险 1：Unity 引入 NuGet 包复杂
+      应对：优先用 NuGetForUnity；若不可行，手动下载 ModelContextProtocol
+      及其依赖 dll 放入 Plugins/ 目录。也可先不用 SDK，手写 MCP
+      JSON-RPC 协议解析（协议本身简单，仅 stdio 行分隔 JSON）。
+    风险 2：MCP Server 与 Unity 主线程交互（MCP 回调可能在后台线程）
+      应对：所有 Unity API 调用必须 marshal 回主线程，用现有的
+      MonoMgr 主线程调度队列（或自建 ConcurrentQueue + Update 轮询）。
+    风险 3：stdout 被 Unity 日志占用
+      应对：MCP stdio 传输要求 stdout 只输出 JSON-RPC。Unity 的
+      Debug.Log 默认写 stdout，需重定向日志或改用 HTTP/SSE 传输。
+      推荐：优先用 HTTP 传输（AIPet 作为本地 HTTP MCP Server），
+      避开 stdout 冲突。
+    风险 4：外部调用可能干扰自主运行
+      应对：MCP tools 的实现走与用户操作相同的内部接口（EventCenter
+      触发），而非直接改状态；可设置「外部控制权限」开关（设置面板），
+      用户可关闭外部调用。
+    风险 5：安全（任意本地进程可连接）
+      应对：MCP Server 绑定 127.0.0.1，端口在用户设置中可改；
+      可选加 token 鉴权（启动时生成随机 token，写入
+      %APPDATA%/AIPet/mcp_token，dsh 插件读取该文件传入）。
+
+    状态：可行性已确认，方案已设计，待排期实施。
+          建议作为 Iter-4 之后的独立里程碑（M1：外部集成）。
+
+================================================================================
+五、迁移记录
+================================================================================
+（想法成熟并写入正式文档后，在此记录：想法标题 → 迁移至哪个文档哪个章节）
+
+[2025-01-XX] 本次大更新迁移清单：
+  1. AI 输出结构升级（action → actions[]）
+     → SRS 第 10 章、数据设计词典 2.5
+  2. IAIActivatable 插件能力注册机制
+     → 已实现 IAIActivatable.cs，SRS 8.1/9.11、数据设计词典 5.1.2
+  3. AI 输出解析多级降级（L0~L3）
+     → SRS 10.3、数据设计词典 2.5
+  4. 管家角色定位 + 双内核设计 + 跨界通讯叙事
+     → 已实现 Steward 插件骨架，SRS 8.4、数据设计词典 2.11/2.12
+  5. 万物皆插件（本体核心 vs 插件边界）
+     → SRS 8.1
+  6. Excel 配置表驱动 + 兑换规则表
+     → SRS 第 12 章、数据设计词典 4.x
+  7. 重要插件数据导出（IDataExportable）
+     → 已实现 IDataExportable.cs，SRS 8.1/9.9
+
+仍在孵化：
+  - 1.3 宠物自主行为触发
+  - 1.6 AI 可读文件知识库（IAIDocumentProvider + AIDocument 注册中心，延后至 Iter-2/3）
+  - 3.1 「皮套」形象体系
+
+本轮（Iter-1 启动前）新增迁移：
+  8. AI Provider 通用化设计（Mock + OpenAICompatibleProvider）
+     → 已落地设计决策，见版本开发流程设计 Iter-1 T1-01
+  9. AIResponse 输出格式不可修改（插件通过 IAIContextProvider + IAIActivatable 扩展）
+     → 已落地设计决策
+  10. IAIContextProvider（AI 输入可扩展机制）
+      → 已迁移至 Iter-1 PromptManager 实现
+
+================================================================================
+                            —— 文件结束 ——
+================================================================================
