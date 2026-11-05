@@ -119,7 +119,9 @@ public class AddrMgr : SingletonAutoMono<AddrMgr>
     }
 
     /// <summary>
-    /// Type 异步加载资源
+    /// 按类型异步加载资源
+    /// Addressables 只提供泛型 LoadAssetAsync&lt;TObject&gt;，没有「按 Type 加载」的公开接口，
+    /// 因此这里统一按 UnityEngine.Object 加载，再校验实际类型是否符合调用方预期
     /// </summary>
     public void LoadResAsync(string abName, string resName, System.Type type, UnityAction<Object> callBack, bool isSync = false)
     {
@@ -133,32 +135,50 @@ public class AddrMgr : SingletonAutoMono<AddrMgr>
 
         string address = GetAddress(abName, resName);
 
+        //已加载则直接返回缓存
         if (handleDic.TryGetValue(address, out AsyncOperationHandle cachedHandle))
         {
             if (!cachedHandle.IsDone)
                 yield return cachedHandle;
-            callBack?.Invoke(cachedHandle.Status == AsyncOperationStatus.Succeeded ? cachedHandle.Result : null);
+
+            callBack?.Invoke(GetResultAs(cachedHandle, type));
             yield break;
         }
 
+        AsyncOperationHandle<Object> handle = Addressables.LoadAssetAsync<Object>(address);
+        handleDic[address] = handle;
+
         if (isSync)
-        {
-            AsyncOperationHandle handle = Addressables.LoadAssetAsync(address, type);
-            Object res = handle.WaitForCompletion() as Object;
-            handleDic[address] = handle;
-            callBack?.Invoke(res);
-        }
+            handle.WaitForCompletion();
+        else
+            yield return handle;
+
+        if (handle.Status == AsyncOperationStatus.Succeeded)
+            callBack?.Invoke(GetResultAs(handle, type));
         else
         {
-            AsyncOperationHandle handle = Addressables.LoadAssetAsync(address, type);
-            handleDic[address] = handle;
-            yield return handle;
-            callBack?.Invoke(handle.Status == AsyncOperationStatus.Succeeded ? handle.Result : null);
+            Debug.LogError($"[AddrMgr] 资源加载失败：{address}，{handle.OperationException}");
+            callBack?.Invoke(null);
         }
     }
 
     /// <summary>
-    /// 按名字异步加载资源
+    /// 从非泛型句柄取出结果并校验类型
+    /// </summary>
+    /// <param name="handle">资源句柄</param>
+    /// <param name="type">期望类型，传 null 表示不校验</param>
+    private Object GetResultAs(AsyncOperationHandle handle, System.Type type)
+    {
+        Object res = handle.Status == AsyncOperationStatus.Succeeded ? (Object)handle.Result : null;
+        if (res == null || type == null || type.IsInstanceOfType(res))
+            return res;
+
+        Debug.LogError($"[AddrMgr] 资源类型不匹配：期望 {type.Name}，实际为 {res.GetType().Name}");
+        return null;
+    }
+
+    /// <summary>
+    /// 按名字异步加载资源（不指定类型，统一按 UnityEngine.Object 加载）
     /// </summary>
     public void LoadResAsync(string abName, string resName, UnityAction<Object> callBack, bool isSync = false)
     {
@@ -172,27 +192,30 @@ public class AddrMgr : SingletonAutoMono<AddrMgr>
 
         string address = GetAddress(abName, resName);
 
+        //已加载则直接返回缓存
         if (handleDic.TryGetValue(address, out AsyncOperationHandle cachedHandle))
         {
             if (!cachedHandle.IsDone)
                 yield return cachedHandle;
-            callBack?.Invoke(cachedHandle.Status == AsyncOperationStatus.Succeeded ? cachedHandle.Result : null);
+
+            callBack?.Invoke(GetResultAs(cachedHandle, null));
             yield break;
         }
 
+        AsyncOperationHandle<Object> handle = Addressables.LoadAssetAsync<Object>(address);
+        handleDic[address] = handle;
+
         if (isSync)
-        {
-            AsyncOperationHandle handle = Addressables.LoadAssetAsync<Object>(address);
-            Object res = handle.WaitForCompletion();
-            handleDic[address] = handle;
-            callBack?.Invoke(res);
-        }
+            handle.WaitForCompletion();
+        else
+            yield return handle;
+
+        if (handle.Status == AsyncOperationStatus.Succeeded)
+            callBack?.Invoke(GetResultAs(handle, null));
         else
         {
-            AsyncOperationHandle handle = Addressables.LoadAssetAsync<Object>(address);
-            handleDic[address] = handle;
-            yield return handle;
-            callBack?.Invoke(handle.Status == AsyncOperationStatus.Succeeded ? handle.Result : null);
+            Debug.LogError($"[AddrMgr] 资源加载失败：{address}，{handle.OperationException}");
+            callBack?.Invoke(null);
         }
     }
 
