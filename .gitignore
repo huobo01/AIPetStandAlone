@@ -96,3 +96,32 @@ $RECYCLE.BIN/
 # Backup folders
 # ================================
 Backup/
+
+# ================================
+# 本地开发文档与辅助开发模块（不推送远端，规范见 Assets/Git管理与操作记录 第七节）
+# ================================
+# 开发文档与过程记录（连同各自 .meta 一起忽略）
+/Assets/软件需求规格说明
+/Assets/软件需求规格说明.meta
+/Assets/版本开发流程设计
+/Assets/版本开发流程设计.meta
+/Assets/数据设计词典
+/Assets/数据设计词典.meta
+/Assets/UI设计开发文档
+/Assets/UI设计开发文档.meta
+/Assets/灵感与待成熟想法
+/Assets/灵感与待成熟想法.meta
+/Assets/修改追踪记录
+/Assets/修改追踪记录.meta
+/Assets/问题与解决记录
+/Assets/问题与解决记录.meta
+/Assets/Git管理与操作记录
+/Assets/Git管理与操作记录.meta
+/Assets/工具功能清单
+/Assets/工具功能清单.meta
+/docs/
+
+# 辅助开发的功能模块（编辑器工具，非软件本体；其生成产物仍属软件本体正常提交）
+/Assets/Editor/Excel/
+/Assets/Editor/UIPanelTool/
+/Assets/AssetBundles-Browser-master/
