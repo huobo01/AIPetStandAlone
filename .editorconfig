@@ -1,0 +1,20 @@
+# 根级 EditorConfig：统一代码风格，配合 Microsoft.Unity.Analyzers 使用
+root = true
+
+[*]
+charset = utf-8
+end_of_line = crlf
+insert_final_newline = true
+trim_trailing_whitespace = true
+
+[*.cs]
+indent_style = space
+indent_size = 4
+
+# ---- Microsoft.Unity.Analyzers 规则级别（按需调整）----
+# UNT0001 空的 Unity 消息函数：警告（空 Start/Update 直接删掉）
+dotnet_diagnostic.UNT0001.severity = warning
+# UNT0002 标签比较用 == 而非 CompareTag：警告
+dotnet_diagnostic.UNT0002.severity = warning
+# UNT0010 MonoBehaviour 不要手写构造函数：警告
+dotnet_diagnostic.UNT0010.severity = warning
