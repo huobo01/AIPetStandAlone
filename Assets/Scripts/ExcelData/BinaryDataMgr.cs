@@ -47,6 +47,14 @@ public class BinaryDataMgr
     /// <typeparam name="K">数据结构类类名</typeparam>
     public void LoadTable<T,K>()
     {
+        // 幂等检查：已加载过同类型容器则跳过，避免重复反射和抛重复 key 异常
+        string tableKey = typeof(T).Name;
+        if (tableDic.ContainsKey(tableKey))
+        {
+            Debug.Log($"[BinaryDataMgr] {tableKey} 已加载，跳过重复加载");
+            return;
+        }
+
         //读取 excel表对应的2进制文件 来进行解析
         using (FileStream fs = File.Open(DATA_BINARY_PATH + typeof(K).Name + ".Bo", FileMode.Open, FileAccess.Read))
         {
